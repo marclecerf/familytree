@@ -63,10 +63,16 @@ def filter_by(tree, person_id):
 
 def digraph(tree):
     dot = gv.Digraph(comment='Family Tree')
-    spouses_visited = []  # one line per spouse pair
 
     def node(idx):
-        return 'P%d' % idx
+        return 'P-%d' % idx
+
+    def union(pair):
+        ordered = sorted(list(pair))
+        return 'U-%d-%d' % (ordered[0], ordered[1])
+
+    def union_members(u):
+        return [int(v) for v in u.split('-')[1:]]
 
     # First, organize nodes into generations.
     # Constrain the output graph so that all nodes
@@ -95,29 +101,52 @@ def digraph(tree):
             generations[gen] = []
         generations[gen].append(p._1)
 
+    # Identify all unions in the family tree
+    unions = set()
+    for p in tree.itervalues():
+        for s in spouses(tree, p._1):
+            if s in tree:
+                unions.add(union((p._1, s)))
+
     # Declare all our nodes
+    # For each spouse pair, make a hidden node to represent their union
+    unions_created = set()
     for g in generations.itervalues():
         with dot.subgraph() as s:
             s.attr(rank='same')
             for _id in g:
                 p = tree[_id]
                 s.node(node(_id), '%d: %s, %s' % (p._1, p.Last, p.First))
+                for u in unions:
+                    if u in unions_created:
+                        continue
+                    elif _id in union_members(u):
+                        print('---------')
+                        print(u)
+                        s.node(u, '', shape='circle', height='0.02')
+                        unions_created.add(u)
 
     # Declare edges
     for p in tree.itervalues():
-        if p.Mother in tree:
+        # Mother / Father
+        if p.Mother in tree and p.Father in tree:
+            u = union((p.Mother, p.Father))
+            dot.edge(u, node(p._1))
+        elif p.Mother in tree:
             dot.edge(node(p.Mother), node(p._1))
-        if p.Father in tree:
+        elif p.Father in tree:
             dot.edge(node(p.Father), node(p._1))
+        # Spouses
         for s in spouse_columns():
             spouse = p._asdict()[s]
             if spouse not in tree:
                 continue
-            if (p._1, spouse) in spouses_visited or \
-                    (spouse, p._1) in spouses_visited:
-                continue
-            dot.edge(node(p._1), node(spouse), arrowhead='none')
-            spouses_visited.append((p._1, spouse))
+            u = union((p._1, spouse))
+            members = union_members(u)
+            if members[0] == p._1:
+                dot.edge(node(p._1), u, arrowhead='none')
+            else:
+                dot.edge(u, node(p._1), arrowhead='none')
     return dot
 
 
